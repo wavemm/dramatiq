@@ -503,3 +503,35 @@ def test_rabbitmq_queues_only_contains_canonical_name(rabbitmq_broker, rabbitmq_
 
     assert len(rabbitmq_broker.queues) == 1
     assert put.queue_name in rabbitmq_broker.queues
+
+
+def test_rabbitmq_flush_true_deletes_the_queue():
+    queue_name = f"flush_all_test_queue_{current_millis()}"
+    url = "amqp://%s:%s@127.0.0.1:5672" % (RABBITMQ_USERNAME, RABBITMQ_PASSWORD)
+    broker = RabbitmqBroker(url=url)
+    broker.declare_queue(queue_name, ensure=True)
+
+    broker.flush(queue_name, delete_queue=False)
+    assert broker.channel.queue_declare(queue=queue_name, passive=True)
+
+    broker.flush(queue_name, delete_queue=True)
+    with pytest.raises(pika.exceptions.ChannelClosedByBroker, match=r"NOT_FOUND - no queue"):
+        broker.channel.queue_declare(queue=queue_name, passive=True)
+
+
+def test_rabbitmq_flush_all_true_deletes_the_queue():
+    queues = set(f"flush_all_test_queue_{current_millis()}_{i}" for i in range(10))
+    url = "amqp://%s:%s@127.0.0.1:5672" % (RABBITMQ_USERNAME, RABBITMQ_PASSWORD)
+    broker = RabbitmqBroker(url=url)
+
+    for queue_name in queues:
+        broker.declare_queue(queue_name, ensure=True)
+
+    broker.flush_all(delete_queue=False)
+    for queue_name in queues:
+        assert broker.channel.queue_declare(queue=queue_name, passive=True)
+
+    broker.flush_all(delete_queue=True)
+    for queue_name in queues:
+        with pytest.raises(pika.exceptions.ChannelClosedByBroker, match=r"NOT_FOUND - no queue"):
+            broker.connection.channel().queue_declare(queue=queue_name, passive=True)
