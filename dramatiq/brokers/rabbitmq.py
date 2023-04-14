@@ -85,8 +85,12 @@ class RabbitmqBroker(Broker):
     .. _ConnectionParameters: https://pika.readthedocs.io/en/0.12.0/modules/parameters.html
     """
 
-    def __init__(self, *, confirm_delivery=False, url=None, middleware=None, max_priority=None, parameters=None, **kwargs):
+    def __init__(self, *, confirm_delivery=False, url=None, middleware=None, max_priority=None, parameters=None,
+                 quorum_queues=False, **kwargs):
         super().__init__(middleware=middleware)
+
+        if max_priority is not None and quorum_queues:
+            raise ValueError("Quorum queues don't support message priority")
 
         if max_priority is not None and not (0 < max_priority <= 255):
             raise ValueError("max_priority must be a value between 0 and 255")
@@ -114,6 +118,7 @@ class RabbitmqBroker(Broker):
             self.parameters = pika.ConnectionParameters(**kwargs)
 
         self.confirm_delivery = confirm_delivery
+        self.quorum_queues = quorum_queues
         self.max_priority = max_priority
         self.connections = set()
         self.channels = set()
@@ -276,8 +281,12 @@ class RabbitmqBroker(Broker):
             "x-dead-letter-exchange": "",
             "x-dead-letter-routing-key": xq_name(queue_name),
         }
+
         if self.max_priority:
             arguments["x-max-priority"] = self.max_priority
+
+        if self.quorum_queues:
+            arguments["x-queue-type"] = "quorum"
 
         return arguments
 
