@@ -382,21 +382,29 @@ class RabbitmqBroker(Broker):
             xq_queue_response.method.message_count,
         )
 
-    def flush(self, queue_name):
+    def flush(self, queue_name: str, delete_queue: bool = False):
         """Drop all the messages from a queue.
 
         Parameters:
           queue_name(str): The queue to flush.
+          delete_queue(bool): If true, the queue will be deleted after it is purged.
         """
         for name in (queue_name, dq_name(queue_name), xq_name(queue_name)):
             if queue_name not in self.queues_pending:
+                self.logger.info("Purging queue %s", queue_name)
                 self.channel.queue_purge(name)
 
-    def flush_all(self):
+                if delete_queue:
+                    self.channel.queue_delete(name)
+
+    def flush_all(self, delete_queue: bool = False):
         """Drop all messages from all declared queues.
+
+        Parameters:
+          delete_queue(bool): If true, the queues will be deleted after they're flushed.
         """
         for queue_name in self.queues:
-            self.flush(queue_name)
+            self.flush(queue_name, delete_queue)
 
     def join(self, queue_name, min_successes=10, idle_time=100, *, timeout=None):
         """Wait for all the messages on the given queue to be

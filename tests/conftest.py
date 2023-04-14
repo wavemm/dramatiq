@@ -70,7 +70,7 @@ def rabbitmq_broker():
     broker.emit_after("process_boot")
     dramatiq.set_broker(broker)
     yield broker
-    broker.flush_all()
+    broker.flush_all(delete_queue=True)
     broker.close()
 
 
