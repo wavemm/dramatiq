@@ -1,10 +1,14 @@
 import os
 import time
 from threading import Event
+from typing import Any
 from unittest.mock import Mock, patch
+from urllib.parse import quote
 
 import pika.exceptions
 import pytest
+import requests
+from requests.auth import HTTPBasicAuth
 
 import dramatiq
 from dramatiq import Message, QueueJoinTimeout, Worker
@@ -12,6 +16,14 @@ from dramatiq.brokers.rabbitmq import RabbitmqBroker, URLRabbitmqBroker, _Ignore
 from dramatiq.common import current_millis
 
 from .common import RABBITMQ_CREDENTIALS, RABBITMQ_PASSWORD, RABBITMQ_USERNAME
+
+
+def get_queue_details(queue_name: str, vhost: str = "/") -> Any:
+    res = requests.get(
+        f'http://127.0.0.1:15672/api/queues/{quote(vhost, safe="")}/{queue_name}',
+        auth=HTTPBasicAuth(RABBITMQ_USERNAME, RABBITMQ_PASSWORD)
+    )
+    return res.json()
 
 
 def test_urlrabbitmq_creates_instances_of_rabbitmq_broker():
@@ -535,3 +547,35 @@ def test_rabbitmq_flush_all_true_deletes_the_queue():
     for queue_name in queues:
         with pytest.raises(pika.exceptions.ChannelClosedByBroker, match=r"NOT_FOUND - no queue"):
             broker.connection.channel().queue_declare(queue=queue_name, passive=True)
+
+
+def test_rabbitmq_max_priority_must_be_between_0_and_255():
+    with pytest.raises(ValueError, match="max_priority must be a value between 0 and 255"):
+        RabbitmqBroker(host="127.0.0.1", max_priority=300)
+
+    with pytest.raises(ValueError, match="max_priority must be a value between 0 and 255"):
+        RabbitmqBroker(host="127.0.0.1", max_priority=-2)
+
+
+def test_rabbitmq_max_priority_cant_be_enabled_with_quorum_queues():
+    assert RabbitmqBroker(host="127.0.0.1", max_priority=10)
+
+    with pytest.raises(ValueError, match="Quorum queues don't support message priority"):
+        RabbitmqBroker(host="127.0.0.1", max_priority=10, quorum_queues=True)
+
+
+def test_rabbitmq_support_for_quorum_queues():
+    queue_name = f"random_queue_{current_millis()}"
+    url = "amqp://%s:%s@127.0.0.1:5672" % (RABBITMQ_USERNAME, RABBITMQ_PASSWORD)
+
+    broker = RabbitmqBroker(url=url, quorum_queues=False)
+    broker.declare_queue(queue_name, ensure=True)
+    queue = get_queue_details(queue_name)
+    assert "quorum" != queue["type"]
+    broker.flush(queue_name, delete_queue=True)
+
+    broker = RabbitmqBroker(url=url, quorum_queues=True)
+    broker.declare_queue(queue_name, ensure=True)
+    queue = get_queue_details(queue_name)
+    assert "quorum" == queue["type"]
+    broker.flush(queue_name, delete_queue=True)

@@ -89,6 +89,7 @@ extra_dependencies["dev"] = extra_dependencies["all"] + [
     "pytest",
     "pytest-benchmark[histogram]",
     "pytest-cov",
+    "requests",
     "tox",
 ]
 
